@@ -1,0 +1,66 @@
+name: Validate YAPM Package
+
+on:
+  pull_request:
+    paths:
+      - '**.yapm'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find changed .yapm files
+        id: changed
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.yapm$' || true)
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+
+      - name: Validate packages
+        run: |
+          FAILED=0
+          for pkg in ${{ steps.changed.outputs.files }}; do
+            echo "Validating $pkg..."
+
+            # check it's a valid zip
+            if ! python3 -c "import zipfile; zipfile.ZipFile('$pkg')" 2>/dev/null; then
+              echo "❌ $pkg is not a valid zip file"
+              FAILED=1
+              continue
+            fi
+
+            # check yapm.data exists inside
+            if ! python3 -c "import zipfile; z=zipfile.ZipFile('$pkg'); names=[n.split('/')[-1] for n in z.namelist()]; exit(0 if 'yapm.data' in names else 1)" 2>/dev/null; then
+              echo "❌ $pkg is missing yapm.data"
+              FAILED=1
+              continue
+            fi
+
+            # extract and validate yapm.data has required fields
+            python3 << EOF
+import zipfile, sys
+
+pkg = "$pkg"
+z = zipfile.ZipFile(pkg)
+data_file = next(n for n in z.namelist() if n.endswith('yapm.data'))
+content = z.read(data_file).decode()
+
+# strip comments
+lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith('//')]
+
+required = ['name', 'version', 'description', 'author', 'license']
+missing = [f for f in required if not any(l.startswith(f + ' =') for l in lines)]
+
+if missing:
+    print(f"❌ {pkg} is missing required fields: {', '.join(missing)}")
+    sys.exit(1)
+
+print(f"✅ {pkg} looks good")
+EOF
+            if [ $? -ne 0 ]; then FAILED=1; fi
+
+          done
+
+          exit $FAILED
