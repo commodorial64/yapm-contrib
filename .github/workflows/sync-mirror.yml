@@ -12,14 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find changed .yapm files
+      - name: Find .yapm files
         id: changed
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            FILES=$(find . -name '*.yapm' -not -path './.git/*' || true)
-          else
-            FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- '*.yapm' || true)
-          fi
+          FILES=$(find . -name '*.yapm' -not -path './.git/*' || true)
           echo "files<<EOF" >> $GITHUB_OUTPUT
           echo "$FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
