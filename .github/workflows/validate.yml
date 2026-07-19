@@ -29,53 +29,7 @@ jobs:
           while IFS= read -r pkg; do
             [ -z "$pkg" ] && continue
             echo "Validating $pkg..."
-
-            # check it's a valid tar.zst (magic bytes: 28 B5 2F FD)
-            if ! python3 -c "import sys; data=open(sys.argv[1],'rb').read(4); exit(0 if data==b'\x28\xb5\x2f\xfd' else 1)" "$pkg" 2>/dev/null; then
-              echo "❌ $pkg is not a valid tar.zst file"
-              FAILED=1
-              continue
-            fi
-
-            # check yapm.data exists inside
-            if ! python3 -c "
-import sys, subprocess, tarfile, tempfile
-subprocess.run(['zstd','-d','-f',sys.argv[1],'-o','/tmp/_yapm_check.tar'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-t=tarfile.open('/tmp/_yapm_check.tar')
-names=[n.split('/')[-1] for n in t.getnames()]
-t.close()
-exit(0 if 'yapm.data' in names else 1)
-" "$pkg" 2>/dev/null; then
-              echo "❌ $pkg is missing yapm.data"
-              FAILED=1
-              continue
-            fi
-
-            # extract and validate yapm.data has required fields
-            python3 - "$pkg" << 'PYEOF'
-import subprocess, sys, tarfile, tempfile
-
-pkg = sys.argv[1]
-with tempfile.TemporaryDirectory() as td:
-    subprocess.run(["zstd","-d","-f",pkg,"-o",f"{td}/pkg.tar"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    t = tarfile.open(f"{td}/pkg.tar")
-    data_file = next(n for n in t.getnames() if n.endswith("yapm.data"))
-    content = t.extractfile(data_file).read().decode()
-    t.close()
-
-lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith('//')]
-
-required = ['name', 'version', 'description', 'author', 'license']
-missing = [f for f in required if not any(l.startswith(f + ' =') for l in lines)]
-
-if missing:
-    print(f"❌ {pkg} is missing required fields: {', '.join(missing)}")
-    sys.exit(1)
-
-print(f"✅ {pkg} looks good")
-PYEOF
+            python3 .github/validate_package.py "$pkg"
             if [ $? -ne 0 ]; then FAILED=1; fi
-
           done <<< "${{ steps.changed.outputs.files }}"
-
           exit $FAILED
