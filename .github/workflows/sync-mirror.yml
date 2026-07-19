@@ -38,6 +38,7 @@ jobs:
           done <<< "${{ steps.changed.outputs.files }}"
 
           cd /tmp/mirror
+          python3 yapm-repo.py
           git config user.name "yapm-bot"
           git config user.email "bot@yapm.dev"
           git add -A
