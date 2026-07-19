@@ -1,0 +1,41 @@
+name: Sync packages to mirror
+
+on:
+  push:
+    branches: [main]
+    paths: ['**.yapm']
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find changed .yapm files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.yapm$' || true)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Push to mirror
+        if: steps.changed.outputs.files != ''
+        env:
+          MIRROR_TOKEN: ${{ secrets.COMMIT_MIRROR_TOKEN }}
+        run: |
+          git clone https://x-access-token:${MIRROR_TOKEN}@github.com/commodorial64/yapm-mirror.git /tmp/mirror
+
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            cp "$pkg" /tmp/mirror/
+            echo "Synced $pkg"
+          done <<< "${{ steps.changed.outputs.files }}"
+
+          cd /tmp/mirror
+          git config user.name "yapm-bot"
+          git config user.email "bot@yapm.dev"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "sync: ${{ steps.changed.outputs.files }}"
+          git push
